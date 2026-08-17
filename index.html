@@ -97,6 +97,15 @@
     border-radius: 4px;
     padding: 2px;
   }
+  select {
+    width: 100%;
+    height: 32px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 13px;
+    background: #fff;
+    padding: 0 6px;
+  }
   input[type="range"] { width: 100%; }
   button {
     width: 100%;
@@ -148,8 +157,21 @@
   <label for="textInput">テキスト（Enterで改行＝新しい列）</label>
   <textarea id="textInput" placeholder="ここに文字を入力してください">激突！&#10;運命の一撃</textarea>
 
+  <label>フォント</label>
+  <select id="fontFamilySelect">
+    <option value="mincho">明朝体</option>
+    <option value="gothic">ゴシック体</option>
+    <option value="pop">ポップ体</option>
+    <option value="brush">筆文字</option>
+  </select>
+
   <label>文字色</label>
   <input type="color" id="colorInput" value="#1a1a1a">
+
+  <label>
+    <span class="row"><span>文字の太さ</span><span class="fontsize-readout" id="weightReadout">0</span></span>
+  </label>
+  <input type="range" id="weightSlider" min="0" max="10" step="0.5" value="0">
 
   <label>
     <span class="row"><span>文字サイズ</span><span class="fontsize-readout" id="fontSizeReadout">自動</span></span>
@@ -180,6 +202,9 @@
   const rectBox = document.getElementById('rectBox');
   const textInput = document.getElementById('textInput');
   const colorInput = document.getElementById('colorInput');
+  const fontFamilySelect = document.getElementById('fontFamilySelect');
+  const weightSlider = document.getElementById('weightSlider');
+  const weightReadout = document.getElementById('weightReadout');
   const autoSizeToggle = document.getElementById('autoSizeToggle');
   const fontSizeSlider = document.getElementById('fontSizeSlider');
   const fontSizeReadout = document.getElementById('fontSizeReadout');
@@ -188,7 +213,12 @@
   const fileInput = document.getElementById('fileInput');
   const downloadBtn = document.getElementById('downloadBtn');
 
-  const MINCHO_FONT = '"Yu Mincho", "游明朝", "YuMincho", "Hiragino Mincho ProN", "MS Mincho", "MS 明朝", serif';
+  const FONT_STACKS = {
+    mincho: '"Yu Mincho", "游明朝", "YuMincho", "Hiragino Mincho ProN", "MS Mincho", "MS 明朝", serif',
+    gothic: '"Yu Gothic", "游ゴシック", "YuGothic", "Hiragino Kaku Gothic ProN", "Meiryo", "MS Gothic", sans-serif',
+    pop: '"HGP創英角ポップ体", "HGPSoeiKakupoptai", "HG丸ゴシックM-PRO", "こぶりなゴシック StdN", "M PLUS Rounded 1c", sans-serif',
+    brush: '"HGP行書体", "HG行書体", "HGPGyoshotai", "DFKaiSho-SB", "Yu Mincho", cursive'
+  };
 
   const DEFAULT_RECT = { x: 181, y: 84, w: 270, h: 384 };
   let rect = Object.assign({}, DEFAULT_RECT);
@@ -313,10 +343,22 @@
     ctx.rect(rect.x, rect.y, rect.w, rect.h);
     ctx.clip();
 
-    ctx.font = fontSize + 'px ' + MINCHO_FONT;
+    const fontStack = FONT_STACKS[fontFamilySelect.value] || FONT_STACKS.mincho;
+    const weight = parseFloat(weightSlider.value);
+    const strokeWidth = (weight / 10) * fontSize * 0.22;
+
+    ctx.font = fontSize + 'px ' + fontStack;
     ctx.fillStyle = colorInput.value;
+    ctx.strokeStyle = colorInput.value;
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = strokeWidth;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+
+    const drawChar = (ch, x, y) => {
+      if (strokeWidth > 0) ctx.strokeText(ch, x, y);
+      ctx.fillText(ch, x, y);
+    };
 
     let colX = rect.x + rect.w - columnWidth / 2;
     for (const col of columns) {
@@ -326,10 +368,10 @@
           ctx.save();
           ctx.translate(colX, y);
           ctx.rotate(Math.PI / 2);
-          ctx.fillText(ch, 0, 0);
+          drawChar(ch, 0, 0);
           ctx.restore();
         } else {
-          ctx.fillText(ch, colX, y);
+          drawChar(ch, colX, y);
         }
         y += fontSize;
       }
@@ -349,6 +391,11 @@
   // ---- controls ----
   textInput.addEventListener('input', draw);
   colorInput.addEventListener('input', draw);
+  fontFamilySelect.addEventListener('change', draw);
+  weightSlider.addEventListener('input', () => {
+    weightReadout.textContent = weightSlider.value;
+    draw();
+  });
   autoSizeToggle.addEventListener('change', () => {
     fontSizeSlider.disabled = autoSizeToggle.checked;
     draw();
