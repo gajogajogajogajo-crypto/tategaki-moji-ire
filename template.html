@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>縦書き文字入れアプリ</title>
+<style>
+  :root {
+    --bg: #f4f1ea;
+    --panel: #ffffff;
+    --border: #d8d2c4;
+    --text: #333;
+    --accent: #b5432f;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Segoe UI", "Yu Gothic", "Meiryo", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px;
+    padding: 24px;
+    align-items: flex-start;
+    justify-content: center;
+  }
+  h1 {
+    font-size: 16px;
+    margin: 0 0 12px;
+    color: var(--text);
+  }
+  .stage-wrap {
+    position: relative;
+    flex: 0 0 auto;
+  }
+  #stage {
+    display: block;
+    border: 1px solid var(--border);
+    background: #fff;
+    touch-action: none;
+    cursor: default;
+  }
+  .rect-box {
+    position: absolute;
+    border: 1.5px dashed var(--accent);
+    background: rgba(181, 67, 47, 0.06);
+    cursor: move;
+  }
+  .handle {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    background: var(--accent);
+    border: 1.5px solid #fff;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+  }
+  .handle.nw { top: 0; left: 0; cursor: nwse-resize; }
+  .handle.ne { top: 0; left: 100%; cursor: nesw-resize; }
+  .handle.sw { top: 100%; left: 0; cursor: nesw-resize; }
+  .handle.se { top: 100%; left: 100%; cursor: nwse-resize; }
+
+  .panel {
+    width: 320px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px;
+  }
+  .panel label {
+    display: block;
+    font-size: 12px;
+    color: #666;
+    margin: 14px 0 6px;
+  }
+  .panel label:first-of-type { margin-top: 0; }
+  textarea {
+    width: 100%;
+    height: 140px;
+    font-size: 14px;
+    padding: 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    resize: vertical;
+    font-family: inherit;
+  }
+  .row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  .row > * { flex: 1; }
+  input[type="color"] {
+    width: 100%;
+    height: 32px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px;
+  }
+  input[type="range"] { width: 100%; }
+  button {
+    width: 100%;
+    padding: 9px 12px;
+    margin-top: 8px;
+    border: 1px solid var(--border);
+    background: #fafafa;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  button:hover { background: #f0ece2; }
+  button.primary {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+    font-weight: bold;
+  }
+  button.primary:hover { background: #9c3927; }
+  .hint {
+    font-size: 11px;
+    color: #888;
+    line-height: 1.5;
+    margin-top: 4px;
+  }
+  .fontsize-readout {
+    font-size: 11px;
+    color: #888;
+    text-align: right;
+  }
+  #fileInput { display: none; }
+</style>
+</head>
+<body>
+
+<div class="stage-wrap">
+  <canvas id="stage" width="480" height="640"></canvas>
+  <div class="rect-box" id="rectBox">
+    <div class="handle nw" data-h="nw"></div>
+    <div class="handle ne" data-h="ne"></div>
+    <div class="handle sw" data-h="sw"></div>
+    <div class="handle se" data-h="se"></div>
+  </div>
+</div>
+
+<div class="panel">
+  <h1>縦書き文字入れ</h1>
+
+  <label for="textInput">テキスト（Enterで改行＝新しい列）</label>
+  <textarea id="textInput" placeholder="ここに文字を入力してください">激突！&#10;運命の一撃</textarea>
+
+  <label>文字色</label>
+  <input type="color" id="colorInput" value="#1a1a1a">
+
+  <label>
+    <span class="row"><span>文字サイズ</span><span class="fontsize-readout" id="fontSizeReadout">自動</span></span>
+  </label>
+  <div class="row">
+    <input type="checkbox" id="autoSizeToggle" checked style="flex:0 0 auto;width:auto;">
+    <span style="flex:0 0 auto;font-size:12px;">自動フィット</span>
+    <input type="range" id="fontSizeSlider" min="8" max="80" value="32" disabled>
+  </div>
+  <div class="hint">テキストが枠に収まるよう文字サイズを自動調整します。チェックを外すと手動指定できます。</div>
+
+  <label>配置エリア</label>
+  <div class="hint">枠をドラッグで移動、四隅の丸をドラッグでリサイズできます。</div>
+  <button id="resetRectBtn">エリアを初期位置に戻す</button>
+
+  <label>画像</label>
+  <button id="uploadBtn">別の画像に差し替える</button>
+  <input type="file" id="fileInput" accept="image/*">
+
+  <button class="primary" id="downloadBtn">PNGとして保存</button>
+</div>
+
+<script>
+(function () {
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  const stageWrap = document.querySelector('.stage-wrap');
+  const rectBox = document.getElementById('rectBox');
+  const textInput = document.getElementById('textInput');
+  const colorInput = document.getElementById('colorInput');
+  const autoSizeToggle = document.getElementById('autoSizeToggle');
+  const fontSizeSlider = document.getElementById('fontSizeSlider');
+  const fontSizeReadout = document.getElementById('fontSizeReadout');
+  const resetRectBtn = document.getElementById('resetRectBtn');
+  const uploadBtn = document.getElementById('uploadBtn');
+  const fileInput = document.getElementById('fileInput');
+  const downloadBtn = document.getElementById('downloadBtn');
+
+  const MINCHO_FONT = '"Yu Mincho", "游明朝", "YuMincho", "Hiragino Mincho ProN", "MS Mincho", "MS 明朝", serif';
+
+  const DEFAULT_RECT = { x: 181, y: 84, w: 270, h: 384 };
+  let rect = Object.assign({}, DEFAULT_RECT);
+
+  let img = new Image();
+  img.onload = draw;
+  img.src = "__IMAGE_BASE64__";
+
+  // ---- rect box <-> DOM sync ----
+  function syncRectBox() {
+    rectBox.style.left = rect.x + 'px';
+    rectBox.style.top = rect.y + 'px';
+    rectBox.style.width = rect.w + 'px';
+    rectBox.style.height = rect.h + 'px';
+  }
+
+  function clampRect() {
+    rect.w = Math.max(30, Math.min(rect.w, canvas.width - rect.x));
+    rect.h = Math.max(30, Math.min(rect.h, canvas.height - rect.y));
+    rect.x = Math.max(0, Math.min(rect.x, canvas.width - rect.w));
+    rect.y = Math.max(0, Math.min(rect.y, canvas.height - rect.h));
+  }
+
+  // ---- dragging / resizing ----
+  let dragMode = null; // 'move' | 'nw' | 'ne' | 'sw' | 'se'
+  let dragStart = null;
+
+  rectBox.addEventListener('pointerdown', (e) => {
+    const handle = e.target.closest('.handle');
+    dragMode = handle ? handle.dataset.h : 'move';
+    dragStart = { x: e.clientX, y: e.clientY, rect: Object.assign({}, rect) };
+    e.target.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+
+  rectBox.addEventListener('pointermove', (e) => {
+    if (!dragMode) return;
+    const dx = e.clientX - dragStart.x;
+    const dy = e.clientY - dragStart.y;
+    const r0 = dragStart.rect;
+
+    if (dragMode === 'move') {
+      rect.x = r0.x + dx;
+      rect.y = r0.y + dy;
+    } else {
+      if (dragMode.includes('w')) { rect.x = r0.x + dx; rect.w = r0.w - dx; }
+      if (dragMode.includes('e')) { rect.w = r0.w + dx; }
+      if (dragMode.includes('n')) { rect.y = r0.y + dy; rect.h = r0.h - dy; }
+      if (dragMode.includes('s')) { rect.h = r0.h + dy; }
+    }
+    clampRect();
+    syncRectBox();
+    draw();
+  });
+
+  function endDrag(e) {
+    dragMode = null;
+  }
+  rectBox.addEventListener('pointerup', endDrag);
+  rectBox.addEventListener('pointercancel', endDrag);
+
+  resetRectBtn.addEventListener('click', () => {
+    rect = Object.assign({}, DEFAULT_RECT);
+    syncRectBox();
+    draw();
+  });
+
+  // ---- vertical text layout ----
+  const ROTATE_CHARS = new Set(['ー', '〜', '~', '-', '−', '(', ')', '（', '）', '[', ']', '…', '‥']);
+
+  function splitParagraphs(text) {
+    return text.replace(/\r\n/g, '\n').split('\n');
+  }
+
+  function layoutColumns(text, fontSize, rectH) {
+    const lineHeight = fontSize;
+    const maxCharsPerColumn = Math.max(1, Math.floor(rectH / lineHeight));
+    const paragraphs = splitParagraphs(text);
+    const columns = [];
+    for (const para of paragraphs) {
+      const chars = Array.from(para);
+      if (chars.length === 0) {
+        columns.push([]);
+        continue;
+      }
+      for (let i = 0; i < chars.length; i += maxCharsPerColumn) {
+        columns.push(chars.slice(i, i + maxCharsPerColumn));
+      }
+    }
+    return { columns, maxCharsPerColumn };
+  }
+
+  function fitFontSize(text, rectW, rectH) {
+    const minSize = 8;
+    const maxSize = Math.min(80, rectH);
+    for (let size = maxSize; size >= minSize; size--) {
+      const { columns } = layoutColumns(text, size, rectH);
+      const totalWidth = columns.length * size;
+      if (totalWidth <= rectW) return size;
+    }
+    return minSize;
+  }
+
+  function drawVerticalText() {
+    const text = textInput.value;
+    if (!text) return;
+
+    let fontSize;
+    if (autoSizeToggle.checked) {
+      fontSize = fitFontSize(text, rect.w, rect.h);
+      fontSizeReadout.textContent = fontSize + 'px（自動）';
+    } else {
+      fontSize = parseInt(fontSizeSlider.value, 10);
+      fontSizeReadout.textContent = fontSize + 'px（手動）';
+    }
+
+    const { columns } = layoutColumns(text, fontSize, rect.h);
+    const columnWidth = fontSize;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(rect.x, rect.y, rect.w, rect.h);
+    ctx.clip();
+
+    ctx.font = fontSize + 'px ' + MINCHO_FONT;
+    ctx.fillStyle = colorInput.value;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    let colX = rect.x + rect.w - columnWidth / 2;
+    for (const col of columns) {
+      let y = rect.y + fontSize / 2;
+      for (const ch of col) {
+        if (ROTATE_CHARS.has(ch)) {
+          ctx.save();
+          ctx.translate(colX, y);
+          ctx.rotate(Math.PI / 2);
+          ctx.fillText(ch, 0, 0);
+          ctx.restore();
+        } else {
+          ctx.fillText(ch, colX, y);
+        }
+        y += fontSize;
+      }
+      colX -= columnWidth;
+    }
+    ctx.restore();
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (img.complete && img.naturalWidth) {
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    }
+    drawVerticalText();
+  }
+
+  // ---- controls ----
+  textInput.addEventListener('input', draw);
+  colorInput.addEventListener('input', draw);
+  autoSizeToggle.addEventListener('change', () => {
+    fontSizeSlider.disabled = autoSizeToggle.checked;
+    draw();
+  });
+  fontSizeSlider.addEventListener('input', draw);
+
+  uploadBtn.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      img = new Image();
+      img.onload = draw;
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  downloadBtn.addEventListener('click', () => {
+    const link = document.createElement('a');
+    link.download = 'vertical-text-output.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  });
+
+  syncRectBox();
+})();
+</script>
+</body>
+</html>
